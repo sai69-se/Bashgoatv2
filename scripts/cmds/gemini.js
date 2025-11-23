@@ -1,4 +1,4 @@
-const { GoogleGenAI } = require("@google/genai");
+const { GoogleGenAI, types } = require("@google/genai"); // 💡 ADDED 'types' HERE
 
 // ------------------------------------
 //          🛠️ CONFIGURATION 🛠️
@@ -11,8 +11,6 @@ const maxTokens = 500;
 const modelName = "gemini-2.5-flash"; // Recommended model for fast chat
 
 // >>> CUSTOMIZE YOUR BOT'S PERSONALITY HERE <<<
-// Use clear, concise instructions. If you continue to get errors, try simplifying this prompt further
-// to isolate the issue, as complex prompts can sometimes trigger safety or recitation blocks.
 const customPrompt = "You are Voidr - Your Complete Business Partner. Your main priority is to help businesses grow by supplying products and creating a strong online presence. Keep your responses helpful, business-focused, and professional. Always offer your services: Product Supply, Website Creation, Social Media Setup, Logo Design, and Audience Growth. Respond concisely.";
 
 
@@ -41,7 +39,7 @@ try {
 module.exports = {
 	config: {
 		name: "gemini",
-		version: "1.3", // Updated version
+		version: "1.4", // Updated version
 		author: "Gemini / NTKhang",
 		countDown: 5,
 		role: 0,
@@ -122,13 +120,39 @@ async function handleGemini({ event, message, content, getLang, commandName }) {
 
         // 1. Initialize chat session if it doesn't exist
         if (!chat) {
+            // Define safety settings to BLOCK_NONE for all relevant categories
+            const safetySettings = [
+                {
+                    category: types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold: types.HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    category: types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold: types.HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    category: types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold: types.HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    category: types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold: types.HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    category: types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+                    threshold: types.HarmBlockThreshold.BLOCK_NONE,
+                },
+            ];
+
             chat = ai.chats.create({
                 model: modelName,
                 systemInstruction: customPrompt,
                 config: {
                     maxOutputTokens: maxTokens,
                     temperature: 0.7,
-                }
+                },
+                // 💥 CRITICAL FIX: Add safety settings to disable filtering
+                safetySettings: safetySettings, 
             });
             geminiHistory[event.senderID] = chat;
         }
@@ -138,14 +162,13 @@ async function handleGemini({ event, message, content, getLang, commandName }) {
             message: content
         });
 		
-        // 🚨 CRITICAL FIX: SAFELY CHECK FOR CANDIDATES TO AVOID "Cannot read properties of undefined (reading '0')"
+        // 🚨 SAFETY CHECK (remains for truly unresolvable issues like API key expiration)
         if (!response.candidates || response.candidates.length === 0) {
             const feedback = response.promptFeedback;
-            let safetyReason = "The model provided no answer. This can happen if the prompt is too complex or the key is inactive.";
+            let safetyReason = "The model provided no answer. This is likely due to an expired API key, a service quota limit, or an unresolvable core safety policy block.";
             
             if (feedback && feedback.blockReason) {
-                 // Provides a specific reason for blocking, often SAFETY or RECITATION
-                 safetyReason = `The response was blocked due to safety settings or policy. Block Reason: ${feedback.blockReason}`;
+                 safetyReason = `The response was blocked. Block Reason: ${feedback.blockReason}`;
             }
             
             return message.reply(getLang('error', safetyReason));
@@ -172,8 +195,11 @@ async function handleGemini({ event, message, content, getLang, commandName }) {
 		console.error("Gemini Error:", errorMessage);
         
         let replyMessage = getLang('error', errorMessage);
+        
         if (errorMessage.includes("API_KEY_INVALID") || errorMessage.includes("INVALID_ARGUMENT")) {
              replyMessage = `An error occurred. Please check your Gemini API key and model configuration.\nError: ${errorMessage}`;
+        } else if (errorMessage.includes("429 RESOURCE_EXHAUSTED")) {
+             replyMessage = "An error occurred: API Quota Limit Reached (429 RESOURCE_EXHAUSTED). Please wait a few minutes or hours for your free tier quota to refresh.";
         }
 		
 		return message.reply(replyMessage);
@@ -181,4 +207,4 @@ async function handleGemini({ event, message, content, getLang, commandName }) {
 	finally {
 		delete geminiUsing[event.senderID];
 	}
-			}
+}
