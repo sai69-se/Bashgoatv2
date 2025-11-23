@@ -8,11 +8,11 @@ const { GoogleGenAI } = require("@google/genai");
 const apiKey = "AIzaSyDBFqdTMTJGi2UFuiUdlH5YZm7TMrZQs8s"; 
 
 const maxTokens = 500;
-const maxStorageMessage = 8; // Max number of messages (user + assistant) to keep in history
-const modelName = "gemini-2.5-flash"; // Excellent for fast chat responses
+const modelName = "gemini-2.5-flash"; // Recommended model for fast chat
 
 // >>> CUSTOMIZE YOUR BOT'S PERSONALITY HERE <<<
-// This system instruction defines Voidr's role and services for every conversation.
+// Use clear, concise instructions. If you continue to get errors, try simplifying this prompt further
+// to isolate the issue, as complex prompts can sometimes trigger safety or recitation blocks.
 const customPrompt = "You are Voidr - Your Complete Business Partner. Your main priority is to help businesses grow by supplying products and creating a strong online presence. Keep your responses helpful, business-focused, and professional. Always offer your services: Product Supply, Website Creation, Social Media Setup, Logo Design, and Audience Growth. Respond concisely.";
 
 
@@ -41,7 +41,7 @@ try {
 module.exports = {
 	config: {
 		name: "gemini",
-		version: "1.2",
+		version: "1.3", // Updated version
 		author: "Gemini / NTKhang",
 		countDown: 5,
 		role: 0,
@@ -122,7 +122,6 @@ async function handleGemini({ event, message, content, getLang, commandName }) {
 
         // 1. Initialize chat session if it doesn't exist
         if (!chat) {
-            // Create a new chat session with the custom prompt
             chat = ai.chats.create({
                 model: modelName,
                 systemInstruction: customPrompt,
@@ -135,14 +134,27 @@ async function handleGemini({ event, message, content, getLang, commandName }) {
         }
 
 		// 2. Send the user's message
-		// The SDK automatically handles the conversation history (including the prompt)
 		const response = await chat.sendMessage({
             message: content
         });
 		
-		const text = response.candidates[0].content.parts[0].text;
+        // 🚨 CRITICAL FIX: SAFELY CHECK FOR CANDIDATES TO AVOID "Cannot read properties of undefined (reading '0')"
+        if (!response.candidates || response.candidates.length === 0) {
+            const feedback = response.promptFeedback;
+            let safetyReason = "The model provided no answer. This can happen if the prompt is too complex or the key is inactive.";
+            
+            if (feedback && feedback.blockReason) {
+                 // Provides a specific reason for blocking, often SAFETY or RECITATION
+                 safetyReason = `The response was blocked due to safety settings or policy. Block Reason: ${feedback.blockReason}`;
+            }
+            
+            return message.reply(getLang('error', safetyReason));
+        }
+        
+        // If candidates exist, safely extract the text
+        const text = response.candidates[0].content.parts[0].text; 
 
-		// 3. Reply to user (This is the only message sent)
+		// 3. Reply to user (Single message response)
 		const replyInfo = await message.reply(text);
 		
 		// 4. Set reply context for follow-up conversation
